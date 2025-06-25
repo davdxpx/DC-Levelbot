@@ -1,4 +1,5 @@
 """Discord level bot main entry point."""
+
 from __future__ import annotations
 
 import json
@@ -13,20 +14,17 @@ import leveling
 from rank_card import create_rank_card
 import badges
 
-CONFIG_PATH = Path('config.json')
+CONFIG_PATH = Path("config.json")
 
 
 def load_config() -> dict:
     if CONFIG_PATH.exists():
-        with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
     return {
-        'token': 'YOUR_BOT_TOKEN_HERE',
-        'guild_id': 0,
-        'role_rewards': {
-            '5': 123456789012345678,
-            '10': 234567890123456789
-        }
+        "token": "YOUR_BOT_TOKEN_HERE",
+        "guild_id": 0,
+        "role_rewards": {"5": 123456789012345678, "10": 234567890123456789},
     }
 
 
@@ -35,8 +33,8 @@ def main() -> None:
     intents = discord.Intents.default()
     intents.message_content = True
     intents.members = True
-    bot = LevelBot(command_prefix='!', intents=intents, config=config)
-    bot.run(config['token'])
+    bot = LevelBot(command_prefix="!", intents=intents, config=config)
+    bot.run(config["token"])
 
 
 class LevelBot(commands.Bot):
@@ -50,17 +48,19 @@ class LevelBot(commands.Bot):
         self.tree.add_command(self.leaderboard)
         self.tree.add_command(self.badges_command)
         self.tree.add_command(self.profile)
-        self.daily_reset.start()
+        self.tree.add_command(self.start_command)
 
     async def setup_hook(self) -> None:
-        guild_id = self.config.get('guild_id')
+        guild_id = self.config.get("guild_id")
         if guild_id:
             guild = discord.Object(id=guild_id)
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
+        # start background tasks once the event loop is running
+        self.daily_reset.start()
 
     async def on_ready(self) -> None:
-        print(f'Logged in as {self.user}!')
+        print(f"Logged in as {self.user}!")
 
     async def on_message(self, message: discord.Message) -> None:
         if not message.guild or message.author.bot:
@@ -69,17 +69,23 @@ class LevelBot(commands.Bot):
         new_badges = badges.increment_messages(message.author.id)
         for bid in new_badges:
             badge = badges.BADGE_DEFINITIONS[bid]
-            await message.author.send(f'\u2728 Du hast das Abzeichen "{badge.name}" erhalten! {badge.icon}')
+            await message.author.send(
+                f'\u2728 Du hast das Abzeichen "{badge.name}" erhalten! {badge.icon}'
+            )
         await self.process_commands(message)
 
-    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User) -> None:
+    async def on_reaction_add(
+        self, reaction: discord.Reaction, user: discord.User
+    ) -> None:
         if user.bot or not reaction.message.guild:
             return
         await self.process_xp(user.id, base_xp=2)
         new_badges = badges.increment_reaction_given(user.id)
         for bid in new_badges:
             badge = badges.BADGE_DEFINITIONS[bid]
-            await user.send(f'\u2728 Du hast das Abzeichen "{badge.name}" erhalten! {badge.icon}')
+            await user.send(
+                f'\u2728 Du hast das Abzeichen "{badge.name}" erhalten! {badge.icon}'
+            )
         # bonus XP if message gets popular
         if reaction.count in {3, 5, 10}:
             await self.process_xp(reaction.message.author.id, base_xp=5)
@@ -88,7 +94,9 @@ class LevelBot(commands.Bot):
             badge = badges.BADGE_DEFINITIONS[bid]
             member = reaction.message.guild.get_member(reaction.message.author.id)
             if member:
-                await member.send(f'\u2728 Du hast das Abzeichen "{badge.name}" erhalten! {badge.icon}')
+                await member.send(
+                    f'\u2728 Du hast das Abzeichen "{badge.name}" erhalten! {badge.icon}'
+                )
 
     async def process_xp(self, user_id: int, base_xp: int) -> None:
         """Add XP with a short cooldown."""
@@ -103,63 +111,86 @@ class LevelBot(commands.Bot):
             await self.handle_level_up(user_id, new_level)
 
     async def handle_level_up(self, user_id: int, level: int) -> None:
-        guild = self.get_guild(self.config['guild_id'])
+        guild = self.get_guild(self.config["guild_id"])
         if not guild:
             return
         member = guild.get_member(user_id)
         if not member:
             return
-        role_id = self.config.get('role_rewards', {}).get(str(level))
+        role_id = self.config.get("role_rewards", {}).get(str(level))
         if role_id:
             role = guild.get_role(role_id)
             if role:
                 await member.add_roles(role)
         channel = member.guild.system_channel or member.guild.text_channels[0]
-        await channel.send(f'Glückwunsch {member.mention}, du bist jetzt Level {level}!')
+        await channel.send(
+            f"Glückwunsch {member.mention}, du bist jetzt Level {level}!"
+        )
 
-    @app_commands.command(description='Zeigt deine aktuelle Rank-Card.')
-    async def rank(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
+    @app_commands.command(
+        name="start", description="Zeigt eine Begrüßungsnachricht an."
+    )
+    async def start_command(self, interaction: discord.Interaction) -> None:
+        """Simple command to confirm the bot is running."""
+        await interaction.response.send_message("Levelbot bereit!", ephemeral=True)
+
+    @app_commands.command(description="Zeigt deine aktuelle Rank-Card.")
+    async def rank(
+        self, interaction: discord.Interaction, member: discord.Member | None = None
+    ) -> None:
         member = member or interaction.user
         xp, level_, next_level_xp = leveling.get_user_data(member.id)
         card = await create_rank_card(member, xp, level_, next_level_xp)
-        await interaction.response.send_message(file=discord.File(card, filename='rank.png'))
+        await interaction.response.send_message(
+            file=discord.File(card, filename="rank.png")
+        )
 
-    @app_commands.command(description='Zeigt das Server-Leaderboard.')
+    @app_commands.command(description="Zeigt das Server-Leaderboard.")
     async def leaderboard(self, interaction: discord.Interaction) -> None:
         top = leveling.get_top_users(10)
-        embed = discord.Embed(title='🏆 Community Leaderboard')
+        embed = discord.Embed(title="🏆 Community Leaderboard")
         for idx, (user_id, xp) in enumerate(top, start=1):
             member = interaction.guild.get_member(user_id)
-            name = member.display_name if member else f'User {user_id}'
+            name = member.display_name if member else f"User {user_id}"
             level_ = leveling.calculate_level(xp)
-            embed.add_field(name=f'{idx}. {name}', value=f'Level {level_} ({xp} XP)', inline=False)
+            embed.add_field(
+                name=f"{idx}. {name}", value=f"Level {level_} ({xp} XP)", inline=False
+            )
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name='badges', description='Zeigt die verdienten Abzeichen.')
-    async def badges_command(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
+    @app_commands.command(name="badges", description="Zeigt die verdienten Abzeichen.")
+    async def badges_command(
+        self, interaction: discord.Interaction, member: discord.Member | None = None
+    ) -> None:
         member = member or interaction.user
         badge_ids = badges.get_user_badges(member.id)
-        embed = discord.Embed(title=f'Abzeichen von {member.display_name}')
+        embed = discord.Embed(title=f"Abzeichen von {member.display_name}")
         if not badge_ids:
-            embed.description = 'Noch keine Abzeichen.'
+            embed.description = "Noch keine Abzeichen."
         else:
             for bid in badge_ids:
                 b = badges.BADGE_DEFINITIONS[bid]
-                embed.add_field(name=f"{b.icon} {b.name}", value=b.description, inline=False)
+                embed.add_field(
+                    name=f"{b.icon} {b.name}", value=b.description, inline=False
+                )
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(description='Zeigt dein Profil inklusive Abzeichen.')
-    async def profile(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
+    @app_commands.command(description="Zeigt dein Profil inklusive Abzeichen.")
+    async def profile(
+        self, interaction: discord.Interaction, member: discord.Member | None = None
+    ) -> None:
         member = member or interaction.user
         xp, level_, next_level_xp = leveling.get_user_data(member.id)
         card = await create_rank_card(member, xp, level_, next_level_xp)
-        embed = discord.Embed(title=f'Profil von {member.display_name}')
-        embed.set_image(url='attachment://rank.png')
+        embed = discord.Embed(title=f"Profil von {member.display_name}")
+        embed.set_image(url="attachment://rank.png")
         badge_ids = badges.get_user_badges(member.id)
         if badge_ids:
-            icons = ' '.join(badges.BADGE_DEFINITIONS[b].icon for b in badge_ids)
-            embed.add_field(name='Abzeichen', value=icons, inline=False)
-        await interaction.response.send_message(embed=embed, file=discord.File(card, filename='rank.png'))
+            icons = " ".join(badges.BADGE_DEFINITIONS[b].icon for b in badge_ids)
+            embed.add_field(name="Abzeichen", value=icons, inline=False)
+        await interaction.response.send_message(
+            embed=embed, file=discord.File(card, filename="rank.png")
+        )
 
     @tasks.loop(hours=24)
     async def daily_reset(self) -> None:
@@ -167,5 +198,5 @@ class LevelBot(commands.Bot):
         leveling.new_day()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
