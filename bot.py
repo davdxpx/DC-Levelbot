@@ -11,6 +11,7 @@ from discord.ext import commands, tasks
 
 import leveling
 from rank_card import create_rank_card
+import badges
 
 CONFIG_PATH = Path('config.json')
 
@@ -47,6 +48,8 @@ class LevelBot(commands.Bot):
         self.cooldowns: dict[int, datetime] = {}
         self.tree.add_command(self.rank)
         self.tree.add_command(self.leaderboard)
+        self.tree.add_command(self.badges_command)
+        self.tree.add_command(self.profile)
         self.daily_reset.start()
 
     async def setup_hook(self) -> None:
@@ -63,15 +66,29 @@ class LevelBot(commands.Bot):
         if not message.guild or message.author.bot:
             return
         await self.process_xp(message.author.id, base_xp=10)
+        new_badges = badges.increment_messages(message.author.id)
+        for bid in new_badges:
+            badge = badges.BADGE_DEFINITIONS[bid]
+            await message.author.send(f'\u2728 Du hast das Abzeichen "{badge.name}" erhalten! {badge.icon}')
         await self.process_commands(message)
 
     async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User) -> None:
         if user.bot or not reaction.message.guild:
             return
         await self.process_xp(user.id, base_xp=2)
+        new_badges = badges.increment_reaction_given(user.id)
+        for bid in new_badges:
+            badge = badges.BADGE_DEFINITIONS[bid]
+            await user.send(f'\u2728 Du hast das Abzeichen "{badge.name}" erhalten! {badge.icon}')
         # bonus XP if message gets popular
         if reaction.count in {3, 5, 10}:
             await self.process_xp(reaction.message.author.id, base_xp=5)
+        author_badges = badges.increment_reaction_received(reaction.message.author.id)
+        for bid in author_badges:
+            badge = badges.BADGE_DEFINITIONS[bid]
+            member = reaction.message.guild.get_member(reaction.message.author.id)
+            if member:
+                await member.send(f'\u2728 Du hast das Abzeichen "{badge.name}" erhalten! {badge.icon}')
 
     async def process_xp(self, user_id: int, base_xp: int) -> None:
         """Add XP with a short cooldown."""
@@ -117,6 +134,32 @@ class LevelBot(commands.Bot):
             level_ = leveling.calculate_level(xp)
             embed.add_field(name=f'{idx}. {name}', value=f'Level {level_} ({xp} XP)', inline=False)
         await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name='badges', description='Zeigt die verdienten Abzeichen.')
+    async def badges_command(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
+        member = member or interaction.user
+        badge_ids = badges.get_user_badges(member.id)
+        embed = discord.Embed(title=f'Abzeichen von {member.display_name}')
+        if not badge_ids:
+            embed.description = 'Noch keine Abzeichen.'
+        else:
+            for bid in badge_ids:
+                b = badges.BADGE_DEFINITIONS[bid]
+                embed.add_field(name=f"{b.icon} {b.name}", value=b.description, inline=False)
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(description='Zeigt dein Profil inklusive Abzeichen.')
+    async def profile(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
+        member = member or interaction.user
+        xp, level_, next_level_xp = leveling.get_user_data(member.id)
+        card = await create_rank_card(member, xp, level_, next_level_xp)
+        embed = discord.Embed(title=f'Profil von {member.display_name}')
+        embed.set_image(url='attachment://rank.png')
+        badge_ids = badges.get_user_badges(member.id)
+        if badge_ids:
+            icons = ' '.join(badges.BADGE_DEFINITIONS[b].icon for b in badge_ids)
+            embed.add_field(name='Abzeichen', value=icons, inline=False)
+        await interaction.response.send_message(embed=embed, file=discord.File(card, filename='rank.png'))
 
     @tasks.loop(hours=24)
     async def daily_reset(self) -> None:
