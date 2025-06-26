@@ -64,6 +64,11 @@ def main() -> None:
         action="store_true",
         help="Synchronise slash commands and exit",
     )
+    parser.add_argument(
+        "--sync-first",
+        action="store_true",
+        help="Sync commands before running the bot",
+    )
     args = parser.parse_args()
 
     print("\U0001F680 Starte LevelBot...")
@@ -75,8 +80,13 @@ def main() -> None:
 
     if args.sync:
         asyncio.run(sync_commands(bot, config["token"]))
-    else:
-        bot.run(config["token"])
+        return
+
+    auto_sync = args.sync_first or os.getenv("AUTO_SYNC", "").lower() in {"1", "true", "yes"}
+    if auto_sync:
+        asyncio.run(sync_commands(bot, config["token"]))
+
+    bot.run(config["token"])
 
 
 class LevelBot(commands.Bot):
