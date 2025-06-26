@@ -17,13 +17,15 @@ class UserData:
 
 def _load() -> dict[str, UserData]:
     if DATA_PATH.exists():
+        print(f"\U0001F4C2 Lade {DATA_PATH.name}")
         with open(DATA_PATH, 'r', encoding='utf-8') as f:
             data = json.load(f)
-            return {uid: UserData(**vals) for uid, vals in data.items()}
+        return {uid: UserData(**vals) for uid, vals in data.items()}
     return {}
 
 
 def _save(data: dict[str, UserData]) -> None:
+    print(f"\U0001F4BE Speichere {DATA_PATH.name}")
     with open(DATA_PATH, 'w', encoding='utf-8') as f:
         json.dump({k: vars(v) for k, v in data.items()}, f)
 
@@ -43,12 +45,15 @@ def add_xp(user_id: int, amount: int) -> int:
     uid = str(user_id)
     data = _DATA.setdefault(uid, UserData())
     data.xp += amount
+    print(f"\u2728 {uid} +{amount} XP")
     _save(_DATA)
     return calculate_level(data.xp)
 
 
 def get_level(user_id: int) -> int:
-    return calculate_level(_DATA.get(str(user_id), UserData()).xp)
+    level = calculate_level(_DATA.get(str(user_id), UserData()).xp)
+    print(f"\U0001F4CA Level von {user_id}: {level}")
+    return level
 
 
 def get_user_data(user_id: int) -> tuple[int, int, int]:
@@ -66,4 +71,4 @@ def get_top_users(limit: int) -> Iterable[tuple[int, int]]:
 
 def new_day() -> None:
     """Placeholder for daily events or decay."""
-    pass
+    print("\U0001F525 Neuer Tag")
