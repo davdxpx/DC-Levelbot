@@ -12,5 +12,6 @@ This repository contains the source code for a Discord bot that implements an in
 - **Leaderboard**: Shows the most active members in real-time.
 - **Challenges & Events**: Optional weekly/monthly events provide extra XP or special badges.
 - **Badge System**: Collect unique badges for activity, reactions and long time membership. Display them with the `/badges` command.
+- **Keep Alive Task**: A background loop prints a heartbeat every few minutes so the bot stays active.
 
 See the `bot.py` file for configuration and usage instructions.
