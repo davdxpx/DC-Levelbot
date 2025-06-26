@@ -59,18 +59,25 @@ class LevelBot(commands.Bot):
         super().__init__(command_prefix=command_prefix, intents=intents)
         self.config = config
         self.cooldowns: dict[int, datetime] = {}
-        self.tree.add_command(self.rank)
-        self.tree.add_command(self.leaderboard)
-        self.tree.add_command(self.badges_command)
-        self.tree.add_command(self.profile)
-        self.tree.add_command(self.start_command)
+        guild_id = self.config.get("guild_id")
+        guild = discord.Object(id=guild_id) if guild_id else None
+        for cmd in (
+            self.rank,
+            self.leaderboard,
+            self.badges_command,
+            self.profile,
+            self.start_command,
+        ):
+            if guild:
+                self.tree.add_command(cmd, guild=guild)
+            else:
+                self.tree.add_command(cmd)
         print("\U0001F916 Bot initialisiert")
 
     async def setup_hook(self) -> None:
         guild_id = self.config.get("guild_id")
         if guild_id:
             guild = discord.Object(id=guild_id)
-            self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
             print(f"\U0001F504 Befehle für Guild {guild_id} synchronisiert")
         else:
@@ -83,6 +90,21 @@ class LevelBot(commands.Bot):
 
     async def on_ready(self) -> None:
         print(f"\U0001F389 Eingeloggt als {self.user}!")
+
+    async def on_app_command_error(
+        self, interaction: discord.Interaction, error: app_commands.AppCommandError
+    ) -> None:
+        if isinstance(error, app_commands.errors.CommandSignatureMismatch):
+            guild_id = self.config.get("guild_id")
+            guild = discord.Object(id=guild_id) if guild_id else None
+            print("\U0001F504 Signaturkonflikt - synchronisiere Befehle erneut")
+            await self.tree.sync(guild=guild)
+            await interaction.response.send_message(
+                "\u26A0\uFE0F Befehle wurden aktualisiert, bitte erneut versuchen.",
+                ephemeral=True,
+            )
+            return
+        raise error
 
     async def on_message(self, message: discord.Message) -> None:
         if not message.guild or message.author.bot:
