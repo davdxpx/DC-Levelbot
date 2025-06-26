@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -14,22 +15,31 @@ import leveling
 from rank_card import create_rank_card
 import badges
 
-CONFIG_PATH = Path("config.json")
+ENV_PATH = Path(".env")
 
 
 def load_config() -> dict:
-    print("\U0001F527 Lade Konfiguration...")
-    if CONFIG_PATH.exists():
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-        print("\u2705 Konfiguration geladen")
-        return cfg
-    print("\u26a0\ufe0f Standardkonfiguration wird verwendet")
-    return {
-        "token": "YOUR_BOT_TOKEN_HERE",
-        "guild_id": 0,
-        "role_rewards": {"5": 123456789012345678, "10": 234567890123456789},
-    }
+    """Load configuration from environment variables."""
+    print("\U0001F527 Lade .env Konfiguration...")
+    if ENV_PATH.exists():
+        from dotenv import load_dotenv
+
+        load_dotenv(ENV_PATH)
+        print("\u2705 .env geladen")
+    else:
+        print("\u26a0\ufe0f Keine .env gefunden, benutze Umgebungsvariablen")
+
+    token = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+    guild_id = int(os.getenv("GUILD_ID", "0"))
+    rewards_raw = os.getenv("ROLE_REWARDS", "")
+    rewards: dict[str, int] = {}
+    for pair in rewards_raw.split(","):
+        if ":" in pair:
+            level, role_id = pair.split(":", 1)
+            if level and role_id:
+                rewards[level.strip()] = int(role_id.strip())
+
+    return {"token": token, "guild_id": guild_id, "role_rewards": rewards}
 
 
 def main() -> None:

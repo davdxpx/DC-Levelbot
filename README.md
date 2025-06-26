@@ -14,4 +14,12 @@ This repository contains the source code for a Discord bot that implements an in
 - **Badge System**: Collect unique badges for activity, reactions and long time membership. Display them with the `/badges` command.
 - **Keep Alive Task**: A background loop prints a heartbeat every few minutes so the bot stays active.
 
-See the `bot.py` file for configuration and usage instructions.
+To configure the bot copy `.env.example` to `.env` and fill in your details:
+
+```
+cp .env.example .env
+# edit the file and set BOT_TOKEN and optionally GUILD_ID and ROLE_REWARDS
+```
+
+The `ROLE_REWARDS` variable uses the format `level:role_id` separated by commas.
+See the `bot.py` file for further usage instructions.
