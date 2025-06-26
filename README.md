@@ -26,9 +26,19 @@ Commands are automatically synced every time the bot starts. If `GUILD_ID` is
 set, commands sync instantly for that server; otherwise they sync globally.
 See the `bot.py` file for further usage instructions.
 
+If you want the bot to resynchronise the commands on every start automatically,
+set `AUTO_SYNC=true` in your `.env` file. This can be helpful on hosting
+platforms where cached commands might become outdated.
+
 To sync the slash commands without starting the bot (useful for Railway's
 pre-deploy step), run:
 
 ```
 python bot.py --sync
+```
+
+You can also force a resync before running the bot with:
+
+```
+python bot.py --sync-first
 ```
