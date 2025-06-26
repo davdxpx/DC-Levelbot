@@ -72,6 +72,10 @@ class LevelBot(commands.Bot):
             guild = discord.Object(id=guild_id)
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
+            print(f"\U0001F504 Befehle für Guild {guild_id} synchronisiert")
+        else:
+            await self.tree.sync()
+            print("\U0001F504 Globale Befehle synchronisiert")
         # start background tasks once the event loop is running
         self.daily_reset.start()
         self.keep_alive.start()
