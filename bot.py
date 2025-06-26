@@ -6,6 +6,8 @@ import json
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+import argparse
+import asyncio
 
 import discord
 from discord import app_commands
@@ -42,14 +44,39 @@ def load_config() -> dict:
     return {"token": token, "guild_id": guild_id, "role_rewards": rewards}
 
 
+async def sync_commands(bot: commands.Bot, token: str) -> None:
+    """Login, sync slash commands and exit."""
+    await bot.login(token)
+    guild_id = bot.config.get("guild_id")
+    guild = discord.Object(id=guild_id) if guild_id else None
+    await bot.tree.sync(guild=guild)
+    if guild_id:
+        print(f"\u2705 Befehle f\u00fcr Guild {guild_id} synchronisiert")
+    else:
+        print("\u2705 Globale Befehle synchronisiert")
+    await bot.close()
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="LevelBot entry point")
+    parser.add_argument(
+        "--sync",
+        action="store_true",
+        help="Synchronise slash commands and exit",
+    )
+    args = parser.parse_args()
+
     print("\U0001F680 Starte LevelBot...")
     config = load_config()
     intents = discord.Intents.default()
     intents.message_content = True
     intents.members = True
     bot = LevelBot(command_prefix="!", intents=intents, config=config)
-    bot.run(config["token"])
+
+    if args.sync:
+        asyncio.run(sync_commands(bot, config["token"]))
+    else:
+        bot.run(config["token"])
 
 
 class LevelBot(commands.Bot):

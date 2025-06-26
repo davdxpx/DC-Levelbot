@@ -25,3 +25,10 @@ The `ROLE_REWARDS` variable uses the format `level:role_id` separated by commas.
 Commands are automatically synced every time the bot starts. If `GUILD_ID` is
 set, commands sync instantly for that server; otherwise they sync globally.
 See the `bot.py` file for further usage instructions.
+
+To sync the slash commands without starting the bot (useful for Railway's
+pre-deploy step), run:
+
+```
+python bot.py --sync
+```
