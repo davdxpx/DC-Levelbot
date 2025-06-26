@@ -1,4 +1,5 @@
-{
-  "token": "token",
-  "guild_id": "1385429137744724050"
-}
+def load_config() -> dict:
+   return {
+        "token": "YOUR_BOT_TOKEN_HERE",
+        "guild_id": 0,
+bot.run(config["token"])
