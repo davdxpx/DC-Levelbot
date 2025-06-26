@@ -18,9 +18,13 @@ CONFIG_PATH = Path("config.json")
 
 
 def load_config() -> dict:
+    print("\U0001F527 Lade Konfiguration...")
     if CONFIG_PATH.exists():
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            cfg = json.load(f)
+        print("\u2705 Konfiguration geladen")
+        return cfg
+    print("\u26a0\ufe0f Standardkonfiguration wird verwendet")
     return {
         "token": "YOUR_BOT_TOKEN_HERE",
         "guild_id": 0,
@@ -29,6 +33,7 @@ def load_config() -> dict:
 
 
 def main() -> None:
+    print("\U0001F680 Starte LevelBot...")
     config = load_config()
     intents = discord.Intents.default()
     intents.message_content = True
@@ -49,6 +54,7 @@ class LevelBot(commands.Bot):
         self.tree.add_command(self.badges_command)
         self.tree.add_command(self.profile)
         self.tree.add_command(self.start_command)
+        print("\U0001F916 Bot initialisiert")
 
     async def setup_hook(self) -> None:
         guild_id = self.config.get("guild_id")
@@ -59,17 +65,20 @@ class LevelBot(commands.Bot):
         # start background tasks once the event loop is running
         self.daily_reset.start()
         self.keep_alive.start()
+        print("\u23F1\uFE0F Hintergrundaufgaben gestartet")
 
     async def on_ready(self) -> None:
-        print(f"Logged in as {self.user}!")
+        print(f"\U0001F389 Eingeloggt als {self.user}!")
 
     async def on_message(self, message: discord.Message) -> None:
         if not message.guild or message.author.bot:
             return
         await self.process_xp(message.author.id, base_xp=10)
+        print(f"\U0001F4AC Nachricht von {message.author.display_name} gezählt")
         new_badges = badges.increment_messages(message.author.id)
         for bid in new_badges:
             badge = badges.BADGE_DEFINITIONS[bid]
+            print(f"\U0001F3C6 Neuer Badge für {message.author.display_name}: {badge.name}")
             await message.author.send(
                 f'\u2728 Du hast das Abzeichen "{badge.name}" erhalten! {badge.icon}'
             )
@@ -81,9 +90,11 @@ class LevelBot(commands.Bot):
         if user.bot or not reaction.message.guild:
             return
         await self.process_xp(user.id, base_xp=2)
+        print(f"\U0001F44D Reaktion von {user.display_name} gezählt")
         new_badges = badges.increment_reaction_given(user.id)
         for bid in new_badges:
             badge = badges.BADGE_DEFINITIONS[bid]
+            print(f"\U0001F3C6 Neuer Badge für {user.display_name}: {badge.name}")
             await user.send(
                 f'\u2728 Du hast das Abzeichen "{badge.name}" erhalten! {badge.icon}'
             )
@@ -95,6 +106,7 @@ class LevelBot(commands.Bot):
             badge = badges.BADGE_DEFINITIONS[bid]
             member = reaction.message.guild.get_member(reaction.message.author.id)
             if member:
+                print(f"\U0001F3C6 Neuer Badge für {member.display_name}: {badge.name}")
                 await member.send(
                     f'\u2728 Du hast das Abzeichen "{badge.name}" erhalten! {badge.icon}'
                 )
@@ -108,6 +120,7 @@ class LevelBot(commands.Bot):
         self.cooldowns[user_id] = now + timedelta(seconds=60)
         level_before = leveling.get_level(user_id)
         new_level = leveling.add_xp(user_id, base_xp)
+        print(f"\u2728 {user_id} erhält {base_xp} XP")
         if new_level > level_before:
             await self.handle_level_up(user_id, new_level)
 
@@ -123,6 +136,7 @@ class LevelBot(commands.Bot):
             role = guild.get_role(role_id)
             if role:
                 await member.add_roles(role)
+        print(f"\U0001F973 {member.display_name} erreicht Level {level}")
         channel = member.guild.system_channel or member.guild.text_channels[0]
         await channel.send(
             f"Glückwunsch {member.mention}, du bist jetzt Level {level}!"
@@ -196,11 +210,12 @@ class LevelBot(commands.Bot):
     @tasks.loop(minutes=5)
     async def keep_alive(self) -> None:
         """Periodic task to show the bot is still running."""
-        print("alive")
+        print("\U0001F49A Bot lebt")
 
     @tasks.loop(hours=24)
     async def daily_reset(self) -> None:
         """Example scheduled task for events/challenges."""
+        print("\U0001F552 Tagesreset")
         leveling.new_day()
 
     async def close(self) -> None:

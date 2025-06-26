@@ -16,6 +16,7 @@ async def create_rank_card(
     member: discord.Member, xp: int, level: int, next_level_xp: int
 ) -> BytesIO:
     """Create a simple rank card image and return it as BytesIO."""
+    print(f"\U0001F4F7 Generiere Rank-Card für {member.display_name}")
     width, height = 450, 120
     bar_width = int((xp / next_level_xp) * (width - 40)) if next_level_xp else 0
 

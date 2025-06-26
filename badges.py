@@ -54,12 +54,15 @@ _STATS: Dict[str, dict] = {}
 
 def _load(path: Path) -> dict:
     if path.exists():
+        print(f"\U0001F4C2 Lade {path.name}")
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        return data
     return {}
 
 
 def _save(path: Path, data: dict) -> None:
+    print(f"\U0001F4BE Speichere {path.name}")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f)
 
@@ -78,6 +81,7 @@ def _ensure_user(user_id: int) -> None:
             "join_date": datetime.utcnow().isoformat(),
         }
         _save(STATS_PATH, _STATS)
+        print(f"\U0001F195 Neuer Nutzer {uid} angelegt")
     if uid not in _BADGE_DATA:
         _BADGE_DATA[uid] = []
         _save(BADGES_PATH, _BADGE_DATA)
@@ -106,6 +110,8 @@ def _check_badges(user_id: int) -> List[str]:
     if newly_earned:
         _BADGE_DATA[uid] = sorted(earned | set(newly_earned))
         _save(BADGES_PATH, _BADGE_DATA)
+        for nb in newly_earned:
+            print(f"\U0001F396 Badge verliehen: {BADGE_DEFINITIONS[nb].name}")
     return newly_earned
 
 
@@ -113,6 +119,7 @@ def increment_messages(user_id: int) -> List[str]:
     _ensure_user(user_id)
     _STATS[str(user_id)]["messages"] += 1
     _save(STATS_PATH, _STATS)
+    print(f"\U0001F4AC Nachrichtenzähler für {user_id}")
     return _check_badges(user_id)
 
 
@@ -120,6 +127,7 @@ def increment_reaction_given(user_id: int) -> List[str]:
     _ensure_user(user_id)
     _STATS[str(user_id)]["reactions_given"] += 1
     _save(STATS_PATH, _STATS)
+    print(f"\U0001F44D Reaktionen vergeben von {user_id}")
     return _check_badges(user_id)
 
 
@@ -127,9 +135,12 @@ def increment_reaction_received(user_id: int) -> List[str]:
     _ensure_user(user_id)
     _STATS[str(user_id)]["reactions_received"] += 1
     _save(STATS_PATH, _STATS)
+    print(f"\u2764\ufe0f Reaktionen erhalten für {user_id}")
     return _check_badges(user_id)
 
 
 def get_user_badges(user_id: int) -> List[str]:
     _ensure_user(user_id)
-    return list(_BADGE_DATA.get(str(user_id), []))
+    badges_list = list(_BADGE_DATA.get(str(user_id), []))
+    print(f"\U0001F3AB Abzeichen für {user_id}: {len(badges_list)}")
+    return badges_list
