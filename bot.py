@@ -58,6 +58,7 @@ class LevelBot(commands.Bot):
             await self.tree.sync(guild=guild)
         # start background tasks once the event loop is running
         self.daily_reset.start()
+        self.keep_alive.start()
 
     async def on_ready(self) -> None:
         print(f"Logged in as {self.user}!")
@@ -192,10 +193,20 @@ class LevelBot(commands.Bot):
             embed=embed, file=discord.File(card, filename="rank.png")
         )
 
+    @tasks.loop(minutes=5)
+    async def keep_alive(self) -> None:
+        """Periodic task to show the bot is still running."""
+        print("alive")
+
     @tasks.loop(hours=24)
     async def daily_reset(self) -> None:
         """Example scheduled task for events/challenges."""
         leveling.new_day()
+
+    async def close(self) -> None:
+        """Shut down the bot and cancel background tasks."""
+        self.keep_alive.cancel()
+        await super().close()
 
 
 if __name__ == "__main__":
