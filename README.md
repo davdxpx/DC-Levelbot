@@ -14,6 +14,29 @@ This repository contains the source code for a Discord bot that implements an in
 - **Badge System**: Collect unique badges for activity, reactions and long time membership. Display them with the `/badges` command.
 - **Keep Alive Task**: A background loop prints a heartbeat every few minutes so the bot stays active.
 
+## Implemented Slash Commands
+
+- `/rank [member]`: Zeigt deine (oder eines anderen Nutzers) aktuelle Rank-Card an.
+- `/leaderboard`: Zeigt das Server-Leaderboard mit den Top-Nutzern.
+- `/badges [member]`: Zeigt deine (oder eines anderen Nutzers) verdienten Abzeichen an.
+- `/profile [member]`: Zeigt dein (oder eines anderen Nutzers) Profil inklusive Rank-Card und Abzeichen.
+- `/stats [member]`: Zeigt detaillierte Statistiken (XP, Level, Nachrichten, Reaktionen, etc.) für dich oder einen anderen Nutzer.
+- `/serverstats`: Zeigt übergreifende Statistiken für den gesamten Server (Mitgliederzahl, Gesamt-XP, etc.).
+- `/daily`: Erlaube Nutzern, eine tägliche XP-Belohnung zu beanspruchen.
+- `/givexp <member> <amount>`: (Admin-only) Vergibt eine bestimmte Menge XP an einen Nutzer.
+- `/triviapursuit`: (In Entwicklung) Starte eine Runde Trivia und gewinne XP.
+- `/start`: Eine einfache Begrüßungsnachricht, um zu bestätigen, dass der Bot läuft.
+
+## Privileged Intents
+
+**Wichtig**: Dieser Bot benötigt die folgenden Privileged Gateway Intents, um voll funktionsfähig zu sein:
+- `Server Members Intent`: Wird für das Abrufen von Mitgliederinformationen (z.B. für Rank-Cards, Avatare, Beitrittsdaten) und das Vergeben von Rollenbelohnungen benötigt.
+- `Message Content Intent`: Wird benötigt, um XP für das Senden von Nachrichten zu vergeben.
+
+Bitte stelle sicher, dass diese Intents für deinen Bot im Discord Developer Portal (unter `Privileged Gateway Intents`) aktiviert sind.
+
+## Konfiguration
+
 To configure the bot copy `.env.example` to `.env` and fill in your details:
 
 ```
