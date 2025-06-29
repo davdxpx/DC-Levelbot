@@ -44,28 +44,37 @@ def load_config() -> dict:
     return {"token": token, "guild_id": guild_id, "role_rewards": rewards}
 
 
-async def sync_commands(bot: commands.Bot, token: str) -> None:
-    """Login, sync slash commands and exit."""
-    print(f"\U0001F511 Versuche Bot-Login für Befehlssynchronisation (Token: ...{token[-5:]})")
-    await bot.login(token)
-    print("\U0001F510 Bot erfolgreich eingeloggt.")
+async def sync_commands_standalone(config: dict, intents: discord.Intents) -> None:
+    """Creates a temporary bot instance, logs in, syncs slash commands, and exits."""
+    print("\U0001F9F9 Erstelle temporäre Bot-Instanz für die Synchronisation...")
+    temp_bot = LevelBot(command_prefix="!", intents=intents, config=config)
+    token = config["token"]
 
-    guild_id = bot.config.get("guild_id")
+    print(f"\U0001F511 Versuche Bot-Login für Befehlssynchronisation (Token: ...{token[-5:]})")
+    await temp_bot.login(token)
+    print("\U0001F510 Temporärer Bot erfolgreich eingeloggt.")
+
+    guild_id = temp_bot.config.get("guild_id")
     guild = discord.Object(id=guild_id) if guild_id else None
+
+    # Commands are added to tree in LevelBot.__init__
+    # We need to ensure the tree is populated for the temp_bot instance
+    # However, LevelBot.__init__ already adds commands to self.tree
+    # So temp_bot.tree should be ready.
 
     target_description = f"Guild {guild_id}" if guild_id else "Global"
     print(f"\U0001F503 Starte Synchronisation für: {target_description}")
 
     try:
-        await bot.tree.sync(guild=guild)
+        await temp_bot.tree.sync(guild=guild)
         print(f"\u2705 Befehle erfolgreich synchronisiert für: {target_description}")
     except discord.errors.HTTPException as e:
         print(f"\U0001F525 FEHLER bei der {target_description} Befehlssynchronisation: {e}")
     except Exception as e:
         print(f"\U0001F525 Unerwarteter FEHLER bei der {target_description} Befehlssynchronisation: {e}")
     finally:
-        await bot.close()
-        print("\U0001F4F5 Bot-Verbindung für Synchronisation geschlossen.")
+        await temp_bot.close()
+        print("\U0001F4F5 Temporäre Bot-Verbindung für Synchronisation geschlossen.")
 
 
 def main() -> None:
@@ -87,16 +96,21 @@ def main() -> None:
     intents = discord.Intents.default()
     intents.message_content = True
     intents.members = True
-    bot = LevelBot(command_prefix="!", intents=intents, config=config)
+    # Removed bot instance creation here, it will be created after potential sync
 
     if args.sync:
-        asyncio.run(sync_commands(bot, config["token"]))
+        asyncio.run(sync_commands_standalone(config, intents))
         return
 
     auto_sync = args.sync_first or os.getenv("AUTO_SYNC", "").lower() in {"1", "true", "yes"}
     if auto_sync:
-        asyncio.run(sync_commands(bot, config["token"]))
+        print("\U0001F504 AUTO_SYNC oder --sync-first erkannt. Führe Befehlssynchronisation durch...")
+        asyncio.run(sync_commands_standalone(config, intents))
+        print("\U0001F50C Synchronisation abgeschlossen.")
 
+    # Create the main bot instance AFTER sync operations are complete
+    print("\U0001F916 Erstelle Haupt-Bot-Instanz...")
+    bot = LevelBot(command_prefix="!", intents=intents, config=config)
     bot.run(config["token"])
 
 
