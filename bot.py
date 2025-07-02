@@ -361,9 +361,105 @@ async def on_ready():
     if TICKET_LOG_CHANNEL_ID: print(f'Ticket Log Channel ID: {TICKET_LOG_CHANNEL_ID}')
     if TICKET_CLOSER_ROLE_ID: print(f'Ticket Closer Role ID: {TICKET_CLOSER_ROLE_ID}')
     print('------')
-    # Kanalüberprüfungen... (wie gehabt)
+    # Hier könnten zusätzliche Kanalüberprüfungen beim Start stattfinden, z.B. ob die Kanal-IDs gültig sind.
+    # Beispiel:
+    open_ticket_channel = client.get_channel(OPEN_TICKET_CHANNEL_ID)
+    if not open_ticket_channel:
+        print(f"WARNUNG: Open a Ticket Channel mit ID {OPEN_TICKET_CHANNEL_ID} wurde nicht gefunden.")
+    appeals_forum = client.get_channel(APPEALS_FORUM_ID)
+    if not appeals_forum:
+        print(f"WARNUNG: Appeals Forum mit ID {APPEALS_FORUM_ID} wurde nicht gefunden.")
+    if TICKET_LOG_CHANNEL_ID:
+        try:
+            log_channel = client.get_channel(int(TICKET_LOG_CHANNEL_ID))
+            if not log_channel:
+                print(f"WARNUNG: Ticket Log Channel mit ID {TICKET_LOG_CHANNEL_ID} wurde nicht gefunden.")
+        except ValueError:
+             print(f"WARNUNG: TICKET_LOG_CHANNEL_ID ('{TICKET_LOG_CHANNEL_ID}') ist keine gültige ID.")
 
-# --- Slash-Befehl: Setup Ticket Panel --- (Bleibt größtenteils gleich)
+
+# --- Slash-Befehl: Setup Ticket Panel ---
 @client.tree.command(name="setup_ticket_panel", description="Postet das Ticket-Panel im 'Open a Ticket'-Kanal.")
 @app_commands.checks.has_permissions(administrator=True)
-async def setup_ticket_panel_command(interac
+async def setup_ticket_panel_command(interaction: discord.Interaction):
+    """
+    Sendet das Ticket-Erstellungspanel in den konfigurierten Kanal.
+    Dieser Befehl kann nur von Administratoren ausgeführt werden.
+    """
+    target_channel_id = OPEN_TICKET_CHANNEL_ID
+    target_channel = interaction.guild.get_channel(target_channel_id)
+
+    if not target_channel:
+        await interaction.response.send_message(
+            f"Fehler: Der Kanal zum Öffnen von Tickets (ID: {target_channel_id}) wurde nicht gefunden. "
+            "Bitte überprüfe die `OPEN_TICKET_CHANNEL_ID` in deiner `.env`-Datei.",
+            ephemeral=True
+        )
+        return
+
+    if not isinstance(target_channel, discord.TextChannel):
+        await interaction.response.send_message(
+            f"Fehler: Der konfigurierte Ticket-Kanal (ID: {target_channel_id}) ist kein Textkanal. "
+            "Bitte wähle einen Textkanal aus.",
+            ephemeral=True
+        )
+        return
+
+    # Erstelle das Embed für das Ticket-Panel
+    panel_embed = Embed(
+        title="🌟 Support Ticket Erstellen 🌟",
+        description=(
+            "Willkommen beim Support-System!\n\n"
+            "Klicke auf einen der untenstehenden Buttons, um ein Ticket für dein spezifisches Anliegen zu erstellen. "
+            "Ein Teammitglied wird sich so schnell wie möglich um dich kümmern."
+        ),
+        color=discord.Color.blue() # Du kannst hier jede gewünschte Farbe verwenden
+    )
+    panel_embed.set_footer(text=f"{interaction.guild.name} Support")
+    # Optional: Ein Thumbnail oder Bild hinzufügen
+    # panel_embed.set_thumbnail(url="URL_ZU_DEINEM_SERVER_LOGO_ODER_EINEM_PASSENDEN_BILD")
+
+    # Erstelle die View mit den Buttons
+    # Stelle sicher, dass die TicketPanelView-Klasse den client korrekt erhält,
+    # falls sie ihn für Callbacks benötigt, die nicht direkt über die Interaction laufen.
+    # In diesem Fall wird der Client in der `setup_hook` der `TicketBotClient` Klasse
+    # bereits an die persistenten Views übergeben.
+    panel_view = TicketPanelView(client=client)
+
+    try:
+        await target_channel.send(embed=panel_embed, view=panel_view)
+        await interaction.response.send_message(
+            f"Das Ticket-Panel wurde erfolgreich im Kanal {target_channel.mention} gepostet.",
+            ephemeral=True
+        )
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "Fehler: Ich habe keine Berechtigung, Nachrichten in den angegebenen Ticket-Kanal zu senden. "
+            "Bitte überprüfe meine Rollenberechtigungen.",
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.response.send_message(
+            f"Ein unerwarteter Fehler ist beim Posten des Panels aufgetreten: {e}",
+            ephemeral=True
+        )
+        print(f"Fehler beim Ausführen von setup_ticket_panel_command: {e}")
+
+@setup_ticket_panel_command.error
+async def setup_ticket_panel_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message("Fehler: Du hast nicht die erforderlichen Berechtigungen (Administrator), um diesen Befehl auszuführen.", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"Ein Fehler ist aufgetreten: {error}", ephemeral=True)
+        print(f"Fehler im setup_ticket_panel_command: {error}")
+
+# --- Start des Bots ---
+if __name__ == "__main__":
+    if not DISCORD_TOKEN:
+        print("FEHLER: DISCORD_TOKEN nicht in .env gefunden.")
+    elif not OPEN_TICKET_CHANNEL_ID:
+        print("FEHLER: OPEN_TICKET_CHANNEL_ID nicht in .env gefunden oder ist 0.")
+    elif not APPEALS_FORUM_ID:
+        print("FEHLER: APPEALS_FORUM_ID nicht in .env gefunden oder ist 0.")
+    else:
+        client.run(DISCORD_TOKEN)
