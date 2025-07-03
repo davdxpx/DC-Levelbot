@@ -108,12 +108,14 @@ class TicketActionsView(View):
         claimer = interaction.user
         timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-        new_description_part = f"\n\n**✅ Geclaimed von:** {claimer.mention} am {timestamp}"
-        if embed.description:
-            embed.description += new_description_part
-        else:
-            embed.description = new_description_part
+        # Aktualisiere das Embed, um den Claim-Status anzuzeigen
+        # Entferne alte Claim-Felder, falls vorhanden (defensive Programmierung)
+        embed.fields = [field for field in embed.fields if field.name != "✅ Geclaimed von"]
         
+        embed.add_field(name="✅ Geclaimed von", value=f"{claimer.mention}\nam {timestamp}", inline=False)
+        embed.color = discord.Color.green() # Ändere die Farbe des Embeds zu grün
+
+        # Button-Status anpassen
         button.disabled = True
         button.label = "Geclaimed"
         button.style = discord.ButtonStyle.secondary
