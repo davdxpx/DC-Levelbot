@@ -120,8 +120,21 @@ class TicketActionsView(View):
         button.label = "Geclaimed"
         button.style = discord.ButtonStyle.secondary
 
-        await original_message.edit(embed=embed, view=self)
-        await interaction.response.send_message(f"Du hast dieses Ticket geclaimed.", ephemeral=True)
+        try:
+            await original_message.edit(embed=embed, view=self)
+            # Nur antworten, wenn die Interaktion noch nicht beantwortet wurde (z.B. durch einen vorherigen Fehler)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"Du hast dieses Ticket geclaimed.", ephemeral=True)
+        except discord.HTTPException as e:
+            print(f"FEHLER: Konnte die Originalnachricht beim Claimen nicht bearbeiten: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("Das Ticket wurde als geclaimed markiert, aber die Ursprungsnachricht konnte nicht vollständig aktualisiert werden. Bitte überprüfe den Thread.", ephemeral=True)
+            # Dennoch versuchen zu loggen, da der Claim-Vorgang logisch stattgefunden hat
+        except Exception as e:
+            print(f"FEHLER: Unerwarteter Fehler beim Bearbeiten der Nachricht/Antworten für Claim: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("Ein unerwarteter Fehler ist beim Claimen aufgetreten.", ephemeral=True)
+            # Dennoch versuchen zu loggen
         
         ticket_creator_field = next((field for field in embed.fields if field.name == "Ersteller"), None)
         creator_mention = ticket_creator_field.value if ticket_creator_field else "dem Ersteller"
@@ -160,9 +173,30 @@ class TicketActionsView(View):
         self.close_button.label = "Geschlossen"
         self.close_button.style = discord.ButtonStyle.secondary
         
-        await original_message.edit(view=self) # Buttons auf der ursprünglichen Nachricht aktualisieren
+        # Original-Embed der Ticket-Info aktualisieren
+        if original_message.embeds:
+            original_ticket_embed = original_message.embeds[0]
+            original_ticket_embed.color = discord.Color.dark_grey() # Farbe für geschlossenen Status
 
-        # Embed für die Schließungsnachricht im Thread
+            # Entferne das "Geclaimed von"-Feld, da "Geschlossen" der definitive Status ist
+            original_ticket_embed.fields = [field for field in original_ticket_embed.fields if field.name != "✅ Geclaimed von"]
+
+            # Füge ein Statusfeld hinzu oder aktualisiere es
+            status_field_found = False
+            for i, field in enumerate(original_ticket_embed.fields):
+                if field.name == "Status":
+                    original_ticket_embed.set_field_at(i, name="Status", value=f"🔒 Geschlossen von {closer.mention}", inline=False)
+                    status_field_found = True
+                    break
+            if not status_field_found:
+                original_ticket_embed.add_field(name="Status", value=f"🔒 Geschlossen von {closer.mention}", inline=False)
+
+            await original_message.edit(embed=original_ticket_embed, view=self)
+        else:
+            # Sollte nicht passieren, da wir immer mit einem Embed starten
+            await original_message.edit(view=self)
+
+        # Embed für die separate Schließungsnachricht im Thread
         close_embed = Embed(
             title="🔒 Ticket Geschlossen",
             description=f"Dieses Ticket wurde von {closer.mention} geschlossen.",
@@ -224,7 +258,7 @@ class TicketActionsView(View):
             print(f"Fehler beim Schließen des Tickets: {e}")
 
 
-    async def log_ticket_action(self, interaction: discord.Interaction, action_name: str, message: str, color: discord.Color):
+    async def log_ticket_action(self, interaction: discord.Interaction, action_name: str, message: str, color: discord.Color, thread_id: int = None):
         if not TICKET_LOG_CHANNEL_ID: return
         client_to_use = self.client_ref if self.client_ref else interaction.client
         if not client_to_use: return
@@ -241,8 +275,32 @@ class TicketActionsView(View):
             embed = Embed(title=f"Ticket System: {action_name}", description=message, color=color)
             embed.set_footer(text=f"Aktion durchgeführt von: {interaction.user.name} ({interaction.user.id})")
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-            if isinstance(interaction.channel, discord.Thread): # Gilt für Claim/Close
-                 embed.add_field(name="Betroffener Ticket Thread", value=interaction.channel.mention, inline=False)
+
+            current_thread_id = None
+            thread_mention_value = "N/A"
+
+            if isinstance(interaction.channel, discord.Thread): # Für Aktionen innerhalb eines Threads (Claim, Close)
+                current_thread_id = interaction.channel.id
+                thread_mention_value = interaction.channel.mention
+            elif thread_id: # Für Aktionen wie Ticketerstellung
+                current_thread_id = thread_id
+                # Versuche, den Thread zu fetchen, um einen korrekten Mention zu bekommen, falls möglich
+                # Dies ist optional und dient der schöneren Darstellung.
+                try:
+                    fetched_thread = await client_to_use.fetch_channel(thread_id)
+                    if isinstance(fetched_thread, discord.Thread):
+                        thread_mention_value = fetched_thread.mention
+                    else: # Fallback, falls fetch_channel keinen Thread liefert oder fehlschlägt
+                        thread_mention_value = f"<#{thread_id}> (Thread)"
+                except (discord.NotFound, discord.Forbidden): # Thread nicht gefunden oder keine Rechte
+                    thread_mention_value = f"<#{thread_id}> (Thread)"
+                except Exception as e: # Andere Fehler beim Fetchen
+                    print(f"Log: Konnte Thread {thread_id} nicht fetchen für Mention: {e}")
+                    thread_mention_value = f"<#{thread_id}> (Thread)"
+
+            if current_thread_id:
+                embed.add_field(name="Ticket Thread", value=thread_mention_value, inline=True)
+                embed.add_field(name="Ticket ID", value=str(current_thread_id), inline=True)
             
             try:
                 await log_channel.send(embed=embed)
@@ -336,13 +394,17 @@ class TicketPanelView(View):
             )
             
             # Log action
-            log_helper_view = TicketActionsView(client=self.client_ref) # Brauchen eine Instanz für log_ticket_action
+            # Da log_ticket_action eine Methode von TicketActionsView ist, erstellen wir temporär eine Instanz
+            # oder rufen es über self.client_ref.log_ticket_action auf, wenn es dorthin verschoben würde.
+            # Für den Moment erstellen wir eine temporäre View-Instanz, um die Methode aufzurufen.
+            # Es wäre sauberer, log_ticket_action in den Client oder als statische Methode auszulagern.
+            log_action_view_instance = TicketActionsView(client=self.client_ref if self.client_ref else interaction.client)
             log_message_detail = f"Neues Ticket '{ticket_type_name}' von {user.mention} erstellt im Thread {thread.mention}."
             if found_tag:
                 log_message_detail += f" Tag '{found_tag.name}' angewendet."
             else:
                 log_message_detail += " Kein passender Forum-Tag gefunden/angewendet."
-            await log_helper_view.log_ticket_action(interaction, "Ticket Erstellt", log_message_detail, discord.Color.blue())
+            await log_action_view_instance.log_ticket_action(interaction, "Ticket Erstellt", log_message_detail, discord.Color.blue(), thread_id=thread.id)
 
         except discord.Forbidden as fe:
             await interaction.response.send_message(f"Fehler beim Erstellen des Tickets: Ich habe möglicherweise nicht die Berechtigung, Threads zu erstellen oder Tags anzuwenden. Bitte überprüfe meine Rollenberechtigungen im Forum. ({fe})", ephemeral=True)
