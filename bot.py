@@ -22,16 +22,73 @@ intents.message_content = True
 intents.guilds = True
 intents.members = True # Wichtig für User-Info und DM
 
+import json
+
+# Globale Variable für geladene Ticket-Kategorien
+TICKET_CATEGORIES = []
+
+def load_ticket_categories():
+    """Lädt Ticket-Kategorien aus ticket_categories.json."""
+    global TICKET_CATEGORIES
+    try:
+        with open("ticket_categories.json", "r", encoding="utf-8") as f:
+            categories = json.load(f)
+        # Grundlegende Validierung (kann erweitert werden)
+        if not isinstance(categories, list):
+            print("FEHLER: ticket_categories.json ist keine Liste.")
+            TICKET_CATEGORIES = []
+            return False
+        for cat in categories:
+            if not all(k in cat for k in ["category_id", "button_label", "button_custom_id", "button_style", "forum_tag_name", "modal_title", "modal_custom_id_prefix", "modal_questions"]):
+                print(f"FEHLER: Kategorie {cat.get('category_id', 'Unbekannt')} in ticket_categories.json fehlen notwendige Schlüssel.")
+                TICKET_CATEGORIES = [] # Bei Fehler keine Kategorien laden, um inkonsistenten Zustand zu vermeiden
+                return False
+            if not isinstance(cat["modal_questions"], list):
+                print(f"FEHLER: 'modal_questions' in Kategorie {cat['category_id']} ist keine Liste.")
+                TICKET_CATEGORIES = []
+                return False
+            for q_idx, q in enumerate(cat["modal_questions"]):
+                 if not all(k_q in q for k_q in ["id", "label", "style", "required"]):
+                    print(f"FEHLER: Frage {q_idx} in Kategorie {cat['category_id']} fehlen notwendige Schlüssel (id, label, style, required).")
+                    TICKET_CATEGORIES = []
+                    return False
+        TICKET_CATEGORIES = categories
+        print(f"{len(TICKET_CATEGORIES)} Ticket-Kategorien erfolgreich aus ticket_categories.json geladen.")
+        return True
+    except FileNotFoundError:
+        print("WARNUNG: ticket_categories.json nicht gefunden. Das Ticket-Panel wird keine Optionen anzeigen.")
+        TICKET_CATEGORIES = []
+        return False # Datei nicht gefunden, aber kein harter Fehler für den Bot-Start unbedingt
+    except json.JSONDecodeError as e:
+        print(f"FEHLER: ticket_categories.json ist nicht valides JSON: {e}")
+        TICKET_CATEGORIES = []
+        return False
+    except Exception as e:
+        print(f"FEHLER: Unerwarteter Fehler beim Laden von ticket_categories.json: {e}")
+        TICKET_CATEGORIES = []
+        return False
+
 # Client-Instanz erstellen
 class TicketBotClient(discord.Client):
     def __init__(self, *, intents: discord.Intents):
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
+        self.ticket_categories = [] # Wird in setup_hook geladen
 
     async def setup_hook(self):
-        self.add_view(TicketPanelView(client=self))
+        if load_ticket_categories(): # Lädt in globale Variable TICKET_CATEGORIES
+             self.ticket_categories = TICKET_CATEGORIES # Kopiere in die Client-Instanz
+        else:
+             # Hier könnte man entscheiden, ob der Bot ohne Kategorien überhaupt starten soll
+             print("Bot startet ohne geladene Ticket-Kategorien aufgrund von Fehlern.")
+             self.ticket_categories = []
+
+
+        # Views müssen die Kategorien oder den Client bekommen, um darauf zuzugreifen
+        # TicketPanelView wird die Kategorien direkt verwenden
+        self.add_view(TicketPanelView(client=self, categories=self.ticket_categories))
         self.add_view(TicketActionsView(client=self)) # Enthält jetzt auch Close
-        # self.add_view(CloseTicketModal()) # Modals müssen nicht persistent gemacht werden
+
         await self.tree.sync()
         print("Slash-Befehle synchronisiert.")
 
@@ -310,31 +367,144 @@ class TicketActionsView(View):
             print(f"Log-Kanal mit ID {TICKET_LOG_CHANNEL_ID} nicht gefunden oder kein Textkanal.")
 
 
-# --- Ticket Panel View mit Buttons und Logik --- (Bleibt größtenteils gleich)
+# --- Ticket Panel View mit Buttons und Logik ---
 class TicketPanelView(View):
-    def __init__(self, client: TicketBotClient = None):
+    def __init__(self, client: TicketBotClient, categories: list):
         super().__init__(timeout=None)
         self.client_ref = client
+        self.categories_data = categories # Speichere die Kategorien-Daten
 
-        button_actions = [
-            ("❓ General Help", "ticket_general_help", discord.ButtonStyle.primary),
-            ("🐛 Bug Report", "ticket_bug_report", discord.ButtonStyle.danger),
-            ("👤 User Report", "ticket_user_report", discord.ButtonStyle.secondary),
-            ("💡 Other Issue", "ticket_other_issue", discord.ButtonStyle.success),
-        ]
-        for label, custom_id, style in button_actions:
-            button = Button(label=label, style=style, custom_id=custom_id)
-            # Wichtig: Das Label vom Button wird jetzt als Ticket-Typ Name verwendet
-            button.callback = lambda i, b=button: self.create_ticket_callback(i, b.label) # Label übergeben
+        if not self.categories_data:
+            print("WARNUNG: TicketPanelView wurde ohne Kategorien initialisiert. Es werden keine Buttons angezeigt.")
+            # Optional: Einen Hinweis-Button hinzufügen oder nichts tun
+            # error_button = Button(label="Fehler: Keine Ticket-Kategorien konfiguriert.", style=discord.ButtonStyle.danger, disabled=True, custom_id="cat_error")
+            # self.add_item(error_button)
+            return
+
+        for category in self.categories_data:
+            button_label = category.get("button_label", "N/A")
+            button_emoji = category.get("button_emoji")
+            if button_emoji:
+                button_label = f"{button_emoji} {button_label}"
+
+            style_str = category.get("button_style", "secondary").lower()
+            button_style = getattr(discord.ButtonStyle, style_str, discord.ButtonStyle.secondary)
+
+            # Die custom_id des Buttons ist nun die category_id aus der JSON, um sie eindeutig zu identifizieren
+            button = Button(
+                label=button_label,
+                style=button_style,
+                custom_id=category["button_custom_id"] # Verwende die definierte custom_id
+            )
+            # Wir binden die category_id an den Callback, um zu wissen, welche Kategorie geklickt wurde
+            button.callback = lambda i, cat_id=category["category_id"]: self.category_button_callback(i, cat_id)
             self.add_item(button)
 
-    async def create_ticket_callback(self, interaction: discord.Interaction, ticket_type_name: str):
-        if not self.client_ref: self.client_ref = interaction.client
-        # ... (Rest der create_ticket_callback Methode bleibt sehr ähnlich)
+    async def category_button_callback(self, interaction: discord.Interaction, category_id: str):
+        """Wird aufgerufen, wenn ein Kategorie-Button geklickt wird. Zeigt das Modal an."""
+        if not self.client_ref: self.client_ref = interaction.client # Fallback
+
+        # Finde die geklickte Kategorie in den geladenen Daten
+        selected_category = next((cat for cat in self.categories_data if cat["category_id"] == category_id), None)
+
+        if not selected_category:
+            await interaction.response.send_message("Fehler: Die ausgewählte Ticket-Kategorie konnte nicht gefunden werden. Bitte kontaktiere einen Admin.", ephemeral=True)
+            print(f"FEHLER: Kategorie mit ID '{category_id}' nicht in self.categories_data gefunden.")
+            return
+
+        # Hier wird das Modal erstellt und angezeigt (nächster Schritt)
+        # Erstelle und zeige das Modal dynamisch
+        ticket_modal = self.build_ticket_modal(selected_category, self.create_ticket_thread_after_modal)
+        await interaction.response.send_modal(ticket_modal)
+        # Die weitere Verarbeitung geschieht im on_submit des Modals, welches dann create_ticket_thread_after_modal aufruft.
+
+    def build_ticket_modal(self, category_config: dict, on_submit_callback: callable) -> Modal:
+        """Erstellt dynamisch ein Modal basierend auf der Kategoriekonfiguration."""
+
+        modal_title = category_config.get("modal_title", "Ticket Details")
+        # Wichtig: Die Custom ID des Modals muss die category_id beinhalten, um sie im on_submit wiederzufinden
+        # und darf nicht zu lang sein (max 100 Zeichen).
+        modal_custom_id = f"ticket_modal_{category_config['category_id']}"
+        if len(modal_custom_id) > 100:
+            modal_custom_id = modal_custom_id[:100]
+
+
+        # Dynamische Modal-Klasse
+        class DynamicTicketModal(Modal, title=modal_title):
+            # Speichere die category_id und den Callback für on_submit
+            # Diese müssen als Klassenattribute oder im Konstruktor übergeben werden,
+            # da sie nicht direkt in on_submit verfügbar sind.
+            # Lösung: Binde sie an die Instanz im Konstruktor der äußeren Klasse oder übergebe sie hier.
+
+            # Wir verwenden eine etwas andere Herangehensweise, um die Daten in on_submit zu bekommen:
+            # Der Callback (on_submit_callback) wird direkt in on_submit verwendet.
+            # Die category_id wird Teil der custom_id des Modals sein und dort extrahiert.
+
+            def __init__(self, category_conf: dict, final_callback: callable):
+                super().__init__(title=category_conf.get("modal_title", "Ticket Details"), custom_id=f"ticket_modal_{category_conf['category_id']}"[:100])
+                self.final_submit_callback = final_callback # z.B. create_ticket_thread_after_modal
+                self.category_config_data = category_conf
+
+                for q_config in category_conf.get("modal_questions", []):
+                    text_style = discord.TextStyle.short
+                    if q_config.get("style", "short").lower() == "paragraph":
+                        text_style = discord.TextStyle.paragraph
+
+                    # TextInput custom_id muss eindeutig sein innerhalb des Modals
+                    # Wir verwenden hier die 'id' aus der JSON-Konfiguration der Frage.
+                    input_field = TextInput(
+                        label=q_config["label"],
+                        custom_id=q_config["id"], # Eindeutige ID für dieses Feld
+                        style=text_style,
+                        placeholder=q_config.get("placeholder"),
+                        required=q_config.get("required", False),
+                        # min_length, max_length können auch konfiguriert werden
+                    )
+                    self.add_item(input_field)
+
+            async def on_submit(self, interaction: discord.Interaction):
+                # Extrahiere Antworten aus dem Modal
+                responses = {}
+                for item in self.children:
+                    if isinstance(item, TextInput):
+                        responses[item.custom_id] = item.value
+
+                # Rufe den finalen Callback auf (create_ticket_thread_after_modal)
+                # Die category_id muss hier wieder extrahiert werden, z.B. aus der modal custom_id
+                # Die custom_id des Modals ist z.B. "ticket_modal_general_help"
+                modal_cat_id = self.custom_id.split("ticket_modal_")[-1]
+
+                # Wichtig: Die Interaktion vom Modal muss zunächst bestätigt werden (defer oder send_message)
+                # bevor der langlaufende Thread-Erstellungsprozess beginnt.
+                # Da create_ticket_thread_after_modal eine followup.send() verwenden wird,
+                # können wir hier mit defer() antworten.
+                await interaction.response.defer(ephemeral=True, thinking=True) # Zeigt "Bot denkt nach..."
+
+                await self.final_submit_callback(interaction, modal_cat_id, responses)
+
+
+        return DynamicTicketModal(category_config, on_submit_callback)
+
+
+    async def create_ticket_thread_after_modal(self, interaction: discord.Interaction, category_id: str, modal_responses: dict):
+        """Erstellt den Ticket-Thread, nachdem das Modal ausgefüllt wurde. Enthält Logik der alten create_ticket_callback."""
+
+        if not self.client_ref: self.client_ref = interaction.client # Fallback
+
+        selected_category = next((cat for cat in self.categories_data if cat["category_id"] == category_id), None)
+        if not selected_category:
+            await interaction.followup.send("Ein interner Fehler ist aufgetreten (Kategorie nicht mehr gefunden beim Erstellen des Threads). Bitte versuche es erneut oder kontaktiere einen Admin.", ephemeral=True)
+            print(f"FEHLER: Kategorie mit ID '{category_id}' nicht in self.categories_data gefunden während create_ticket_thread_after_modal.")
+            return
+
         user = interaction.user
-        appeals_forum: ForumChannel = self.client_ref.get_channel(APPEALS_FORUM_ID)
+        ticket_type_name = selected_category['button_label'] # Button-Label als Ticket-Typ-Name
+
+        appeals_forum: ForumChannel = self.client_ref.get_channel(APPEALS_FORUM_ID) # type: ignore
         if not appeals_forum or not isinstance(appeals_forum, discord.ForumChannel):
-            await interaction.response.send_message("Fehler: Das 'Appeals'-Forum ist nicht korrekt konfiguriert.", ephemeral=True)
+            # Wichtig: followup verwenden, da die Interaktion vom Modal kommt und gedeffert wurde
+            await interaction.followup.send("Fehler: Das 'Appeals'-Forum ist nicht korrekt konfiguriert. Bitte informiere einen Admin.", ephemeral=True)
+            print(f"FEHLER: Appeals-Forum (ID: {APPEALS_FORUM_ID}) nicht gefunden oder kein Forum-Kanal.")
             return
 
         thread_title = f"[Offen] {ticket_type_name} - {user.name}"
@@ -345,76 +515,110 @@ class TicketPanelView(View):
         
         ticket_embed = Embed(
             title=f"🎫 Neues Ticket: {ticket_type_name}",
-            description=f"Ein neues Ticket wurde erstellt und wartet auf Bearbeitung.",
+            description=f"Ein neues Ticket wurde von {user.mention} erstellt und wartet auf Bearbeitung.",
             color=discord.Color.orange()
         )
         ticket_embed.add_field(name="Ersteller", value=f"{user.mention} ({user.id})", inline=False)
-        ticket_embed.add_field(name="Ticket Typ", value=ticket_type_name, inline=False)
+        ticket_embed.add_field(name="Ticket Typ", value=ticket_type_name, inline=False) # Verwende das Button-Label als Typ
         ticket_embed.add_field(name="Erstellt am", value=timestamp_formatted, inline=False)
         
-        initial_content_for_thread_creation = f"Neues Ticket von {user.mention}."
+        # Trennlinie und Titel für Modal-Antworten
+        if modal_responses: # Nur hinzufügen, wenn es Antworten gibt
+            ticket_embed.add_field(name="─" * 30, value="**Vom Benutzer angegebene Informationen:**", inline=False)
+            for question_config in selected_category.get("modal_questions", []):
+                question_id = question_config["id"]
+                question_label = question_config["label"] # Das Label aus der JSON als Feldname
+                response_value = modal_responses.get(question_id)
+
+                if not response_value: # Wenn leer
+                    if question_config.get("required", False):
+                        response_value = "_FEHLER: Erforderliche Angabe fehlt_" # Sollte nicht passieren bei Modal-Validierung
+                    else:
+                        response_value = "_N/A (Optional)_"
+
+                # Discord Field Value Limit ist 1024
+                ticket_embed.add_field(name=f"{question_label}", value=str(response_value)[:1020], inline=False)
         
+        initial_content_for_thread_creation = f"Neues Ticket von {user.mention}."
         mention_text = ""
-        if ADMIN_MOD_ROLE_ID:
+        # Verwende ADMIN_MOD_ROLE_ID (aus .env, die der Bot als ADMIN_MOD_ROLE_ID kennt)
+        # Die .env.example nennt es ADMIN_MOD_PING_ROLE_ID zur Klarstellung des Zwecks
+        admin_mod_ping_role_id_str = os.getenv("ADMIN_MOD_PING_ROLE_ID") # Hole es frisch, falls es geändert wurde
+        if admin_mod_ping_role_id_str:
             try:
-                role = interaction.guild.get_role(int(ADMIN_MOD_ROLE_ID))
-                if role: mention_text = f"\n{role.mention}, ein neues Ticket benötigt Aufmerksamkeit!"
-            except: pass
+                role_id = int(admin_mod_ping_role_id_str)
+                if interaction.guild: # Stelle sicher, dass wir einen Guild-Kontext haben
+                    role = interaction.guild.get_role(role_id)
+                    if role:
+                        mention_text = f"\n{role.mention}, ein neues Ticket benötigt Aufmerksamkeit!"
+                    else:
+                        print(f"WARNUNG: ADMIN_MOD_PING_ROLE_ID {role_id} nicht auf dem Server gefunden.")
+                else: # Sollte nicht passieren bei Guild-basierten Interaktionen
+                     print(f"WARNUNG: Kein Guild-Kontext für ADMIN_MOD_PING_ROLE_ID.")
+            except ValueError:
+                print(f"WARNUNG: ADMIN_MOD_PING_ROLE_ID ('{admin_mod_ping_role_id_str}') ist keine gültige ID.")
+            except Exception as e:
+                print(f"FEHLER beim Verarbeiten der ADMIN_MOD_PING_ROLE_ID: {e}")
+
 
         try:
             thread_message_content = initial_content_for_thread_creation + mention_text
-            # Manchmal ist es besser, die erste Nachricht leer zu lassen, wenn man direkt ein Embed sendet
-            # thread_message_content = discord.utils.MISSING # Sendet keine Startnachricht, nur das Embed unten
-
-            # Versuche, den passenden Tag zu finden
-            applied_tags = []
-            target_tag_name = ticket_type_name # z.B. "General Help"
-            available_tags = appeals_forum.available_tags
             
-            found_tag = discord.utils.find(lambda tag: tag.name == target_tag_name, available_tags)
-            if found_tag:
-                applied_tags.append(found_tag)
-                print(f"INFO: Forum-Tag '{target_tag_name}' gefunden und wird angewendet.")
+            # Tagging basierend auf 'forum_tag_name' aus der Kategorie-Konfiguration
+            applied_tags = []
+            target_tag_name = selected_category.get("forum_tag_name")
+            if target_tag_name:
+                available_tags = appeals_forum.available_tags
+                found_tag = discord.utils.find(lambda tag: tag.name == target_tag_name, available_tags)
+                if found_tag:
+                    applied_tags.append(found_tag)
+                    print(f"INFO: Forum-Tag '{target_tag_name}' gefunden und wird für Kategorie '{selected_category['category_id']}' angewendet.")
+                else:
+                    print(f"WARNUNG: Forum-Tag '{target_tag_name}' (für Kategorie '{selected_category['category_id']}') nicht im Forum '{appeals_forum.name}' (ID: {APPEALS_FORUM_ID}) gefunden.")
             else:
-                print(f"WARNUNG: Forum-Tag '{target_tag_name}' nicht im Forum '{appeals_forum.name}' (ID: {APPEALS_FORUM_ID}) gefunden. Stelle sicher, dass Tags exakt so heißen wie die Ticket-Typen (Button-Labels).")
+                print(f"INFO: Kein 'forum_tag_name' für Kategorie '{selected_category['category_id']}' definiert.")
 
             thread = await appeals_forum.create_thread(
                 name=thread_title,
                 content=thread_message_content, 
-                applied_tags=applied_tags if applied_tags else discord.utils.MISSING
+                applied_tags=applied_tags if applied_tags else discord.utils.MISSING # type: ignore
             )
-            ticket_embed.set_footer(text=f"Ticket ID: {thread.id}")
+            ticket_embed.set_footer(text=f"Ticket ID: {thread.id} | Kategorie: {selected_category['category_id']}")
             
-            await thread.send(embed=ticket_embed, view=TicketActionsView(client=self.client_ref))
+            await thread.send(embed=ticket_embed, view=TicketActionsView(client=self.client_ref)) # type: ignore
             
-            tag_info_msg = f" (Tag: {found_tag.name})" if found_tag else " (Hinweis: Kein passender Forum-Tag für diesen Ticket-Typ gefunden.)"
-            await interaction.response.send_message(
+            tag_info_msg = f" (Tag: {found_tag.name})" if found_tag and target_tag_name else ""
+            if not found_tag and target_tag_name: # Tag war definiert, aber nicht gefunden
+                tag_info_msg = f" (Hinweis: Der konfigurierte Tag '{target_tag_name}' wurde im Forum nicht gefunden.)"
+
+            # Wichtig: followup verwenden, da die Interaktion vom Modal kommt und gedeffert wurde
+            await interaction.followup.send(
                 f"Dein Ticket '{ticket_type_name}' wurde erfolgreich erstellt! Du findest es hier: {thread.mention}{tag_info_msg}",
                 ephemeral=True
             )
             
-            # Log action
-            # Da log_ticket_action eine Methode von TicketActionsView ist, erstellen wir temporär eine Instanz
-            # oder rufen es über self.client_ref.log_ticket_action auf, wenn es dorthin verschoben würde.
-            # Für den Moment erstellen wir eine temporäre View-Instanz, um die Methode aufzurufen.
-            # Es wäre sauberer, log_ticket_action in den Client oder als statische Methode auszulagern.
-            log_action_view_instance = TicketActionsView(client=self.client_ref if self.client_ref else interaction.client)
-            log_message_detail = f"Neues Ticket '{ticket_type_name}' von {user.mention} erstellt im Thread {thread.mention}."
-            if found_tag:
+            log_action_view_instance = TicketActionsView(client=self.client_ref if self.client_ref else interaction.client) # type: ignore
+            log_message_detail = f"Neues Ticket '{ticket_type_name}' (Kategorie: {selected_category['category_id']}) von {user.mention} erstellt im Thread {thread.mention}."
+            if found_tag and target_tag_name:
                 log_message_detail += f" Tag '{found_tag.name}' angewendet."
-            else:
-                log_message_detail += " Kein passender Forum-Tag gefunden/angewendet."
+            elif target_tag_name: # Tag definiert, aber nicht gefunden
+                log_message_detail += f" Konfigurierter Tag '{target_tag_name}' nicht gefunden."
+            else: # Kein Tag definiert
+                 log_message_detail += " Kein spezifischer Forum-Tag für diese Kategorie konfiguriert."
+
             await log_action_view_instance.log_ticket_action(interaction, "Ticket Erstellt", log_message_detail, discord.Color.blue(), thread_id=thread.id)
 
         except discord.Forbidden as fe:
-            await interaction.response.send_message(f"Fehler beim Erstellen des Tickets: Ich habe möglicherweise nicht die Berechtigung, Threads zu erstellen oder Tags anzuwenden. Bitte überprüfe meine Rollenberechtigungen im Forum. ({fe})", ephemeral=True)
+            await interaction.followup.send(f"Fehler beim Erstellen des Tickets: Ich habe möglicherweise nicht die Berechtigung, Threads zu erstellen oder Tags anzuwenden. Bitte überprüfe meine Rollenberechtigungen im Forum. ({fe})", ephemeral=True)
             print(f"FEHLER (Forbidden) beim Erstellen des Tickets oder Anwenden von Tags: {fe}")
         except Exception as e:
-            await interaction.response.send_message(f"Fehler beim Erstellen des Tickets: {e}",ephemeral=True)
-            print(f"FEHLER beim Erstellen des Tickets: {e}")
+            await interaction.followup.send(f"Ein unerwarteter Fehler ist beim Erstellen des Tickets aufgetreten. Bitte versuche es später erneut oder kontaktiere einen Admin. Fehler: {e}",ephemeral=True)
+            print(f"FEHLER beim Erstellen des Tickets nach Modal: {e}")
+            import traceback
+            traceback.print_exc()
 
 
-# --- Event: Bot ist bereit --- (Bleibt größtenteils gleich)
+# --- Event: Bot ist bereit ---
 @client.event
 async def on_ready():
     print(f'{client.user} ist jetzt online und bereit!')

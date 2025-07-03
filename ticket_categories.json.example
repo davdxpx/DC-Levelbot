@@ -1,0 +1,94 @@
+[
+  {
+    "category_id": "general_help",
+    "button_label": "General Help",
+    "button_emoji": "❓",
+    "button_custom_id": "ticket_cat_general",
+    "button_style": "primary",
+    "forum_tag_name": "General Help",
+    "modal_title": "General Help Request",
+    "modal_custom_id_prefix": "modal_general_help",
+    "modal_questions": [
+      {
+        "id": "description",
+        "label": "Please describe your issue:",
+        "style": "paragraph",
+        "required": true,
+        "placeholder": "Explain your problem in detail here..."
+      },
+      {
+        "id": "tried_solutions",
+        "label": "What have you tried so far? (Optional)",
+        "style": "paragraph",
+        "required": false,
+        "placeholder": "e.g., restarted the client, checked the FAQ..."
+      }
+    ]
+  },
+  {
+    "category_id": "bug_report",
+    "button_label": "Bug Report",
+    "button_emoji": "🐛",
+    "button_custom_id": "ticket_cat_bug",
+    "button_style": "danger",
+    "forum_tag_name": "Bug Report",
+    "modal_title": "Bug Report Submission",
+    "modal_custom_id_prefix": "modal_bug_report",
+    "modal_questions": [
+      {
+        "id": "bug_description",
+        "label": "Detailed description of the bug:",
+        "style": "paragraph",
+        "required": true,
+        "placeholder": "What happened? What did you expect to happen?"
+      },
+      {
+        "id": "steps_to_reproduce",
+        "label": "Steps to reproduce the bug:",
+        "style": "paragraph",
+        "required": true,
+        "placeholder": "1. I did this...\n2. Then I did that...\n3. The bug occurred."
+      },
+      {
+        "id": "additional_info",
+        "label": "Any additional information? (Optional)",
+        "style": "short",
+        "required": false,
+        "placeholder": "e.g., error messages, screenshots (links)"
+      }
+    ]
+  },
+  {
+    "category_id": "user_report",
+    "button_label": "User Report",
+    "button_emoji": "👤",
+    "button_custom_id": "ticket_cat_user",
+    "button_style": "secondary",
+    "forum_tag_name": "User Report",
+    "modal_title": "Report a User",
+    "modal_custom_id_prefix": "modal_user_report",
+    "modal_questions": [
+      {
+        "id": "reported_user",
+        "label": "Name/ID of the user you are reporting:",
+        "style": "short",
+        "required": true,
+        "placeholder": "Username#1234 or User ID"
+      },
+      {
+        "id": "reason",
+        "label": "Reason for reporting:",
+        "style": "paragraph",
+        "required": true,
+        "placeholder": "Explain why you are reporting this user."
+      },
+      {
+        "id": "evidence",
+        "label": "Evidence (e.g., message links, screenshot links):",
+        "style": "paragraph",
+        "required": false,
+        "placeholder": "Provide any evidence you have."
+      }
+    ]
+  }
+]
